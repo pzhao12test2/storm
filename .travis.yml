@@ -29,7 +29,7 @@ env:
 - MODULES=storm-client
 - MODULES=storm-server
 - MODULES=storm-core
-- MODULES='!storm-client,!storm-server,!storm-core'
+- MODULES='storm-webapp'
 - MODULES='INTEGRATION-TEST'
 install: /bin/bash ./dev-tools/travis/travis-install.sh `pwd`
 jdk:
