@@ -131,11 +131,6 @@ public class TridentSpoutExecutor implements ITridentBatchBolt {
         }
 
         @Override
-        public void flush() {
-            _delegate.flush();
-        }
-
-        @Override
         public void reportError(Throwable t) {
             _delegate.reportError(t);
         }        

@@ -20,8 +20,8 @@ package org.apache.storm.kafka.spout.trident;
 
 import java.util.List;
 import java.util.Map;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.storm.kafka.spout.KafkaSpoutConfig;
-import org.apache.storm.kafka.spout.RecordTranslator;
 import org.apache.storm.task.TopologyContext;
 import org.apache.storm.trident.spout.IOpaquePartitionedTridentSpout;
 import org.apache.storm.tuple.Fields;
@@ -34,22 +34,26 @@ public class KafkaTridentSpoutOpaque<K,V> implements IOpaquePartitionedTridentSp
 
     private static final Logger LOG = LoggerFactory.getLogger(KafkaTridentSpoutOpaque.class);
 
-    private final KafkaSpoutConfig<K, V> kafkaSpoutConfig;
+    private final KafkaTridentSpoutManager<K, V> kafkaManager;
+
+    public KafkaTridentSpoutOpaque(KafkaSpoutConfig<K, V> conf) {
+        this(new KafkaTridentSpoutManager<>(conf));
+    }
     
-    public KafkaTridentSpoutOpaque(KafkaSpoutConfig<K, V> kafkaSpoutConfig) {
-        this.kafkaSpoutConfig = kafkaSpoutConfig;
+    public KafkaTridentSpoutOpaque(KafkaTridentSpoutManager<K, V> kafkaManager) {
+        this.kafkaManager = kafkaManager;
         LOG.debug("Created {}", this.toString());
     }
 
     @Override
     public Emitter<List<Map<String, Object>>, KafkaTridentSpoutTopicPartition, Map<String, Object>> getEmitter(
             Map<String, Object> conf, TopologyContext context) {
-        return new KafkaTridentSpoutEmitter<>(kafkaSpoutConfig, context);
+        return new KafkaTridentSpoutEmitter<>(kafkaManager, context);
     }
 
     @Override
     public Coordinator<List<Map<String, Object>>> getCoordinator(Map<String, Object> conf, TopologyContext context) {
-        return new KafkaTridentSpoutOpaqueCoordinator<>(kafkaSpoutConfig);
+        return new KafkaTridentSpoutOpaqueCoordinator<>(kafkaManager);
     }
 
     @Override
@@ -59,13 +63,7 @@ public class KafkaTridentSpoutOpaque<K,V> implements IOpaquePartitionedTridentSp
 
     @Override
     public Fields getOutputFields() {
-        RecordTranslator<K, V> translator = kafkaSpoutConfig.getTranslator();
-        int numStreams = translator.streams().size();
-        if (numStreams > 1) {
-            throw new IllegalStateException("Trident spouts must have at most one output stream,"
-                + " found streams [" + translator.streams() + "]");
-        }
-        final Fields outputFields = translator.getFieldsFor(translator.streams().get(0));
+        final Fields outputFields = kafkaManager.getFields();
         LOG.debug("OutputFields = {}", outputFields);
         return outputFields;
     }
@@ -73,6 +71,6 @@ public class KafkaTridentSpoutOpaque<K,V> implements IOpaquePartitionedTridentSp
     @Override
     public final String toString() {
         return super.toString()
-                + "{kafkaSpoutConfig=" + kafkaSpoutConfig + '}';
+                + "{kafkaManager=" + kafkaManager + '}';
     }
 }

@@ -19,7 +19,6 @@
 package org.apache.storm.hive.bolt;
 
 import org.apache.storm.Config;
-import org.apache.storm.hive.common.HiveWriter;
 import org.apache.storm.task.GeneralTopologyContext;
 import org.apache.storm.task.OutputCollector;
 import org.apache.storm.topology.TopologyBuilder;
@@ -46,6 +45,7 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 import org.mockito.Mock;
+import org.mockito.Mockito;
 import org.mockito.MockitoAnnotations;
 import static org.junit.Assert.assertEquals;
 import static org.mockito.Mockito.*;
@@ -306,23 +306,6 @@ public class TestHiveBolt {
         bolt.cleanup();
     }
 
-    private static class FlushFailureHiveBolt extends HiveBolt {
-
-        public FlushFailureHiveBolt(HiveOptions options) {
-            super(options);
-        }
-
-        @Override
-        void flushAllWriters(boolean rollToNext) throws HiveWriter.CommitFailure, HiveWriter.TxnBatchFailure, HiveWriter.TxnFailure,
-                InterruptedException {
-            if (rollToNext) {
-                throw new InterruptedException();
-            } else {
-                super.flushAllWriters(false);
-            }
-        }
-    }
-
     @Test
     public void testNoAcksIfFlushFails() throws Exception
     {
@@ -333,20 +316,24 @@ public class TestHiveBolt {
                 .withTxnsPerBatch(2)
                 .withBatchSize(2);
 
-        HiveBolt failingBolt = new FlushFailureHiveBolt(hiveOptions);
+        HiveBolt spyBolt = Mockito.spy(new HiveBolt(hiveOptions));
 
-        failingBolt.prepare(config, null, new OutputCollector(collector));
+        //This forces a failure of all the flush attempts
+        doThrow(new InterruptedException()).when(spyBolt).flushAllWriters(true);
+
+
+        spyBolt.prepare(config, null, new OutputCollector(collector));
 
         Tuple tuple1 = generateTestTuple(1,"SJC","Sunnyvale","CA");
         Tuple tuple2 = generateTestTuple(2,"SFO","San Jose","CA");
 
-        failingBolt.execute(tuple1);
-        failingBolt.execute(tuple2);
+        spyBolt.execute(tuple1);
+        spyBolt.execute(tuple2);
 
         verify(collector, never()).ack(tuple1);
         verify(collector, never()).ack(tuple2);
 
-        failingBolt.cleanup();
+        spyBolt.cleanup();
     }
 
     @Test
@@ -464,7 +451,7 @@ public class TestHiveBolt {
                     return new Fields("id", "msg","city","state");
                 }
             };
-        return new TupleImpl(topologyContext, new Values(id, msg,city,state), topologyContext.getComponentId(1), 1, "");
+        return new TupleImpl(topologyContext, new Values(id, msg,city,state), 1, "");
     }
 
 }

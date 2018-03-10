@@ -15,7 +15,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.apache.storm.executor;
 
 import org.apache.storm.generated.Credentials;
@@ -23,19 +22,15 @@ import org.apache.storm.generated.ExecutorStats;
 import org.apache.storm.grouping.LoadMapping;
 
 import java.util.List;
-import org.apache.storm.utils.JCQueue;
+import org.apache.storm.utils.DisruptorQueue;
 
 public interface IRunningExecutor {
 
     ExecutorStats renderStats();
-
     List<Long> getExecutorId();
-
     void credentialsChanged(Credentials credentials);
-
     void loadChanged(LoadMapping loadMapping);
-
-    JCQueue getReceiveQueue();
-
-    boolean publishFlushTuple();
+    boolean getBackPressureFlag();
+    DisruptorQueue getReceiveQueue();
+    DisruptorQueue getSendQueue();
 }

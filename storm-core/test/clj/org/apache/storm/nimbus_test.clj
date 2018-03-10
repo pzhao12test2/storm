@@ -1311,7 +1311,7 @@
   (with-open [zk (InProcessZookeeper. )]
     (with-open [tmp-nimbus-dir (TmpPath.)
                 _ (MockedZookeeper. (proxy [Zookeeper] []
-                      (zkLeaderElectorImpl [conf zk blob-store tc] (MockLeaderElector. ))))]
+                      (zkLeaderElectorImpl [conf blob-store tc] (MockLeaderElector. ))))]
       (let [nimbus-dir (.getPath tmp-nimbus-dir)]
         (letlocals
           (bind conf (merge (clojurify-structure (ConfigUtils/readStormConfig))
@@ -1319,7 +1319,7 @@
                         STORM-CLUSTER-MODE "local"
                         STORM-ZOOKEEPER-PORT (.getPort zk)
                         STORM-LOCAL-DIR nimbus-dir}))
-          (bind cluster-state (ClusterUtils/mkStormClusterState conf (ClusterStateContext.)))
+          (bind cluster-state (ClusterUtils/mkStormClusterState conf nil (ClusterStateContext.)))
           (bind nimbus (mk-nimbus conf (Nimbus$StandaloneINimbus.) nil nil nil nil))
           (.launchServer nimbus)
           (bind topology (Thrift/buildTopology
@@ -1328,10 +1328,10 @@
                            {}))
 
           (with-open [_ (MockedZookeeper. (proxy [Zookeeper] []
-                          (zkLeaderElectorImpl [conf zk blob-store tc] (MockLeaderElector. false))))]
+                          (zkLeaderElectorImpl [conf blob-store tc] (MockLeaderElector. false))))]
 
             (letlocals
-              (bind non-leader-cluster-state (ClusterUtils/mkStormClusterState conf (ClusterStateContext.)))
+              (bind non-leader-cluster-state (ClusterUtils/mkStormClusterState conf nil (ClusterStateContext.)))
               (bind non-leader-nimbus (mk-nimbus conf (Nimbus$StandaloneINimbus.) nil nil nil nil))
               (.launchServer non-leader-nimbus)
 
@@ -1611,6 +1611,36 @@
   )
 ))
 
+(deftest test-nimbus-data-acls
+  (testing "nimbus-data uses correct ACLs"
+    (let [scheme "digest"
+          digest "storm:thisisapoorpassword"
+          auth-conf (merge (clojurify-structure (ConfigUtils/readStormConfig))
+                    {STORM-ZOOKEEPER-AUTH-SCHEME scheme
+                     STORM-ZOOKEEPER-AUTH-PAYLOAD digest
+                     STORM-PRINCIPAL-TO-LOCAL-PLUGIN "org.apache.storm.security.auth.DefaultPrincipalToLocal"
+                     NIMBUS-MONITOR-FREQ-SECS 10
+                     NIMBUS-THRIFT-PORT 6666})
+          expected-acls Nimbus/ZK_ACLS
+          fake-inimbus (reify INimbus (getForcedScheduler [this] nil) (prepare [this conf dir] nil))
+          fake-cu (proxy [ServerConfigUtils] []
+                    (nimbusTopoHistoryStateImpl [conf] nil))
+          fake-utils (proxy [Utils] []
+                       (makeUptimeComputer [] (proxy [Utils$UptimeComputer] []
+                                                (upTime [] 0))))
+          cluster-utils (Mockito/mock ClusterUtils)
+	  fake-common (proxy [StormCommon] []
+                             (mkAuthorizationHandler [_] nil))]
+      (with-open [_ (ServerConfigUtilsInstaller. fake-cu)
+                  _ (UtilsInstaller. fake-utils)
+                  - (StormCommonInstaller. fake-common)
+                  zk-le (MockedZookeeper. (proxy [Zookeeper] []
+                          (zkLeaderElectorImpl [conf blob-store tc] nil)))
+                  mocked-cluster (MockedCluster. cluster-utils)]
+          (mk-nimbus auth-conf fake-inimbus)
+          (.mkStormClusterStateImpl (Mockito/verify cluster-utils (Mockito/times 1)) (Mockito/any) (Mockito/eq expected-acls) (Mockito/any))
+          ))))
+
 (deftest test-file-bogus-download
     (with-open [cluster (.build
                           (doto (LocalCluster$Builder. )
@@ -1649,7 +1679,7 @@
                       STORM-CLUSTER-MODE "local"
                       STORM-ZOOKEEPER-PORT (.getPort zk)
                       STORM-LOCAL-DIR nimbus-dir}))
-        (bind cluster-state (ClusterUtils/mkStormClusterState conf (ClusterStateContext.)))
+        (bind cluster-state (ClusterUtils/mkStormClusterState conf nil (ClusterStateContext.)))
         (bind nimbus (mk-nimbus conf (Nimbus$StandaloneINimbus.) nil nil nil nil))
         (.launchServer nimbus)
         (Time/sleepSecs 1)
@@ -1676,7 +1706,7 @@
   (with-open [zk (InProcessZookeeper. )]
     (with-open [tmp-nimbus-dir (TmpPath.)
                 _ (MockedZookeeper. (proxy [Zookeeper] []
-                    (zkLeaderElectorImpl [conf zk blob-store tc] (MockLeaderElector. ))))]
+                    (zkLeaderElectorImpl [conf blob-store tc] (MockLeaderElector. ))))]
       (let [nimbus-dir (.getPath tmp-nimbus-dir)]
         (letlocals
           (bind conf (merge (clojurify-structure (ConfigUtils/readStormConfig))
@@ -1685,7 +1715,7 @@
                         STORM-ZOOKEEPER-PORT (.getPort zk)
                         STORM-LOCAL-DIR nimbus-dir
                         NIMBUS-TOPOLOGY-ACTION-NOTIFIER-PLUGIN (.getName InMemoryTopologyActionNotifier)}))
-          (bind cluster-state (ClusterUtils/mkStormClusterState conf (ClusterStateContext.)))
+          (bind cluster-state (ClusterUtils/mkStormClusterState conf nil (ClusterStateContext.)))
           (bind nimbus (mk-nimbus conf (Nimbus$StandaloneINimbus.) nil nil nil nil))
           (.launchServer nimbus)
           (bind notifier (InMemoryTopologyActionNotifier.))
@@ -1734,7 +1764,7 @@
       (.submitTopology cluster "t1" {TOPOLOGY-WORKERS 1} topology)
       (.debug nimbus "t1" "" true 100))))
 
-;; if the user sends an empty log config, nimbus will say that all
+;; if the user sends an empty log config, nimbus will say that all 
 ;; log configs it contains are LogLevelAction/UNCHANGED
 (deftest empty-save-config-results-in-all-unchanged-actions
   (let [cluster-state (Mockito/mock IStormClusterState)
@@ -1818,26 +1848,21 @@
 (defn teardown-heartbeats [id])
 (defn teardown-topo-errors [id])
 (defn teardown-backpressure-dirs [id])
-(defn teardown-wt-dirs [id])
 
 (defn mock-cluster-state
   ([]
     (mock-cluster-state nil nil))
   ([active-topos inactive-topos]
-    (mock-cluster-state active-topos inactive-topos inactive-topos inactive-topos inactive-topos))
+    (mock-cluster-state active-topos inactive-topos inactive-topos inactive-topos))
   ([active-topos hb-topos error-topos bp-topos]
-    (mock-cluster-state active-topos hb-topos error-topos bp-topos nil))
-  ([active-topos hb-topos error-topos bp-topos wt-topos]
     (reify IStormClusterState
       (teardownHeartbeats [this id] (teardown-heartbeats id))
       (teardownTopologyErrors [this id] (teardown-topo-errors id))
       (removeBackpressure [this id] (teardown-backpressure-dirs id))
-      (removeAllPrivateWorkerKeys [this id] (teardown-wt-dirs id))
       (activeStorms [this] active-topos)
       (heartbeatStorms [this] hb-topos)
       (errorTopologies [this] error-topos)
-      (backpressureTopologies [this] bp-topos)
-      (idsOfTopologiesWithPrivateWorkerKeys [this] (into #{} wt-topos)))))
+      (backpressureTopologies [this] bp-topos))))
 
 (deftest cleanup-storm-ids-returns-inactive-topos
          (let [mock-state (mock-cluster-state (list "topo1") (list "topo1" "topo2" "topo3"))
@@ -1874,13 +1899,14 @@
         mock-blob-store (Mockito/mock BlobStore)
         conf {NIMBUS-MONITOR-FREQ-SECS 10}]
     (with-open [_ (MockedZookeeper. (proxy [Zookeeper] []
-                    (zkLeaderElectorImpl [conf zk blob-store tc] (MockLeaderElector. ))))]
+                    (zkLeaderElectorImpl [conf blob-store tc] (MockLeaderElector. ))))]
       (let [nimbus (Mockito/spy (Nimbus. conf nil mock-state nil mock-blob-store nil nil))]
         (.set (.getHeartbeatsCache nimbus) hb-cache)
         (.thenReturn (Mockito/when (.storedTopoIds mock-blob-store)) (HashSet. inactive-topos))
         (mocking
           [teardown-heartbeats
-           teardown-topo-errors]
+           teardown-topo-errors
+           teardown-backpressure-dirs]
 
           (.doCleanup nimbus)
 
@@ -1891,6 +1917,10 @@
           ;; removed topo errors znode
           (verify-nth-call-args-for 1 teardown-topo-errors "topo2")
           (verify-nth-call-args-for 2 teardown-topo-errors "topo3")
+
+          ;; removed backpressure znodes
+          (verify-nth-call-args-for 1 teardown-backpressure-dirs "topo2")
+          (verify-nth-call-args-for 2 teardown-backpressure-dirs "topo3")
 
           ;; removed topo directories
           (.forceDeleteTopoDistDir (Mockito/verify nimbus) "topo2")
@@ -1914,18 +1944,20 @@
         mock-blob-store (Mockito/mock BlobStore)
         conf {NIMBUS-MONITOR-FREQ-SECS 10}]
     (with-open [_ (MockedZookeeper. (proxy [Zookeeper] []
-                    (zkLeaderElectorImpl [conf zk blob-store tc] (MockLeaderElector. ))))]
+                    (zkLeaderElectorImpl [conf blob-store tc] (MockLeaderElector. ))))]
       (let [nimbus (Mockito/spy (Nimbus. conf nil mock-state nil mock-blob-store nil nil))]
         (.set (.getHeartbeatsCache nimbus) hb-cache)
         (.thenReturn (Mockito/when (.storedTopoIds mock-blob-store)) (set inactive-topos))
         (mocking
           [teardown-heartbeats
-           teardown-topo-errors]
+           teardown-topo-errors
+           teardown-backpressure-dirs]
 
           (.doCleanup nimbus)
 
           (verify-call-times-for teardown-heartbeats 0)
           (verify-call-times-for teardown-topo-errors 0)
+          (verify-call-times-for teardown-backpressure-dirs 0)
           (.forceDeleteTopoDistDir (Mockito/verify nimbus (Mockito/times 0)) (Mockito/anyObject))
           (.rmTopologyKeys (Mockito/verify nimbus (Mockito/times 0)) (Mockito/anyObject))
 

@@ -56,11 +56,6 @@ public class SpoutOutputCollectorMock implements ISpoutOutputCollector {
   }
 
   @Override
-  public void flush() {
-    // NO-OP
-  }
-
-  @Override
   public void reportError(Throwable arg0) {
   }
 

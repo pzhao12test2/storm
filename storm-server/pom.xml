@@ -46,10 +46,6 @@
             <groupId>org.apache.curator</groupId>
             <artifactId>curator-recipes</artifactId>
         </dependency>
-        <dependency>
-            <groupId>org.apache.zookeeper</groupId>
-            <artifactId>zookeeper</artifactId>
-        </dependency>
 
         <dependency>
             <groupId>io.dropwizard.metrics</groupId>
@@ -67,10 +63,6 @@
             <groupId>com.google.auto.service</groupId>
             <artifactId>auto-service</artifactId>
             <optional>true</optional>
-        </dependency>
-        <dependency>
-            <groupId>org.rocksdb</groupId>
-            <artifactId>rocksdbjni</artifactId>
         </dependency>
 
         <!-- test -->
@@ -138,7 +130,7 @@
                 <artifactId>maven-checkstyle-plugin</artifactId>
                 <!--Note - the version would be inherited-->
                 <configuration>
-                    <maxAllowedViolations>2585</maxAllowedViolations>
+                    <maxAllowedViolations>2617</maxAllowedViolations>
                 </configuration>
             </plugin>
             <plugin>

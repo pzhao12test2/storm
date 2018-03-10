@@ -31,9 +31,8 @@ public class TestSimpleFileNameFormat {
 
     @Test
     public void testDefaults() {
-        Map<String, Object> topoConf = new HashMap();
         SimpleFileNameFormat format = new SimpleFileNameFormat();
-        format.prepare(null, createTopologyContext(topoConf));
+        format.prepare(null, createTopologyContext());
         long now = System.currentTimeMillis();
         String path = format.getPath();
         String name = format.getName(1, now);
@@ -49,8 +48,7 @@ public class TestSimpleFileNameFormat {
             .withName("$TIME.$HOST.$COMPONENT.$TASK.$NUM.txt")
             .withPath("/mypath")
             .withTimeFormat("yyyy-MM-dd HH:mm:ss");
-        Map<String, Object> topoConf = new HashMap();
-        format.prepare(null, createTopologyContext(topoConf));
+        format.prepare(null, createTopologyContext());
         long now = System.currentTimeMillis();
         String path = format.getPath();
         String name = format.getName(1, now);
@@ -68,15 +66,14 @@ public class TestSimpleFileNameFormat {
 
     @Test(expected=IllegalArgumentException.class)
     public void testTimeFormat() {
-        Map<String, Object> topoConf = new HashMap();
         SimpleFileNameFormat format = new SimpleFileNameFormat()
         	.withTimeFormat("xyz");
-        format.prepare(null, createTopologyContext(topoConf));
+        format.prepare(null, createTopologyContext());
     }
     
-    private TopologyContext createTopologyContext(Map<String, Object> topoConf){
+    private TopologyContext createTopologyContext(){
     	Map<Integer, String> taskToComponent = new HashMap<Integer, String>();
         taskToComponent.put(7, "Xcom");
-    	return new TopologyContext(null, topoConf, taskToComponent, null, null, null, null, null, null, 7, 6703, null, null, null, null, null, null);
+    	return new TopologyContext(null, null, taskToComponent, null, null, null, null, null, null, 7, 6703, null, null, null, null, null, null);
     }
 }

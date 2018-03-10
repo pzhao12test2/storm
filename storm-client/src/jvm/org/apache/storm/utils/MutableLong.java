@@ -33,7 +33,7 @@ public class MutableLong {
     }
     
     public long increment() {
-        return ++val;
+        return increment(1);
     }
     
     public long increment(long amt) {

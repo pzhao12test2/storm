@@ -17,18 +17,18 @@
 package org.apache.storm.kafka.spout.subscription;
 
 import java.io.Serializable;
-import java.util.Set;
+import java.util.List;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.TopicPartition;
 
 public interface TopicFilter extends Serializable {
     
     /**
-     * Get the Kafka TopicPartitions subscribed to by this set of spouts. 
+     * Get the Kafka TopicPartitions passed by this filter. 
      * @param consumer The Kafka consumer to use to read the list of existing partitions
-     * @return The Kafka partitions this set of spouts should subscribe to
+     * @return The Kafka partitions passed by this filter.
      */
-    Set<TopicPartition> getAllSubscribedPartitions(KafkaConsumer<?, ?> consumer);
+    List<TopicPartition> getFilteredTopicPartitions(KafkaConsumer<?, ?> consumer);
     
     /**
      * Get the topics string.

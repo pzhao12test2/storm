@@ -17,7 +17,6 @@
  */
 package org.apache.storm.security.auth;
 
-import org.apache.storm.security.auth.sasl.SaslTransportPlugin;
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;

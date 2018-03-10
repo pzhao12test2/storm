@@ -17,8 +17,6 @@
  */
 package org.apache.storm.messaging.netty;
 
-import org.apache.storm.serialization.KryoValuesDeserializer;
-import org.apache.storm.serialization.KryoValuesSerializer;
 import org.jboss.netty.channel.ChannelPipeline;
 import org.jboss.netty.channel.ChannelPipelineFactory;
 import org.jboss.netty.channel.Channels;
@@ -37,9 +35,9 @@ class StormServerPipelineFactory implements ChannelPipelineFactory {
         ChannelPipeline pipeline = Channels.pipeline();
 
         // Decoder
-        pipeline.addLast("decoder", new MessageDecoder(server.deser));
+        pipeline.addLast("decoder", new MessageDecoder());
         // Encoder
-        pipeline.addLast("encoder", new MessageEncoder(server._ser));
+        pipeline.addLast("encoder", new MessageEncoder());
 
         boolean isNettyAuth = (Boolean) this.server.topoConf
                 .get(Config.STORM_MESSAGING_NETTY_AUTHENTICATION);

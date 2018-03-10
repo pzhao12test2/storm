@@ -24,7 +24,6 @@ import static org.mockito.Mockito.when;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Set;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
@@ -55,7 +54,7 @@ public class NamedTopicFilterTest {
         when(consumerMock.partitionsFor(matchingTopicTwo)).thenReturn(partitionTwoPartitions);
         when(consumerMock.partitionsFor(unmatchedTopic)).thenReturn(Collections.singletonList(createPartitionInfo(unmatchedTopic, 0)));
         
-        Set<TopicPartition> matchedPartitions = filter.getAllSubscribedPartitions(consumerMock);
+        List<TopicPartition> matchedPartitions = filter.getFilteredTopicPartitions(consumerMock);
         
         assertThat("Expected filter to pass only topics with exact name matches", matchedPartitions, 
             containsInAnyOrder(new TopicPartition(matchingTopicOne, 0), new TopicPartition(matchingTopicTwo, 0), new TopicPartition(matchingTopicTwo, 1)));

@@ -15,11 +15,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.apache.storm.security;
 
-import java.util.Map;
 import org.apache.storm.daemon.Shutdownable;
+
+import java.util.Map;
+import org.apache.storm.generated.StormTopology;
 
 /**
  * Nimbus auto credential plugin that will be called on nimbus host
@@ -44,7 +45,7 @@ public interface INimbusCredentialPlugin extends Shutdownable {
      */
     @Deprecated
     default void populateCredentials(Map<String, String> credentials, Map<String, Object> topologyConf) {
-        throw new IllegalStateException("One of the populateCredentials methods must be overridden by " + this);
+        throw new IllegalStateException("One of the populateCredentials methods must be overridden");
     }
 
     /**

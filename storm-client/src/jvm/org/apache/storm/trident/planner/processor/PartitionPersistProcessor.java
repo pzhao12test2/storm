@@ -77,11 +77,6 @@ public class PartitionPersistProcessor implements TridentProcessor {
     }
 
     @Override
-    public void flush() {
-        // NO-OP
-    }
-    
-    @Override
     public void finishBatch(ProcessorContext processorContext) {
         _collector.setContext(processorContext);
         Object batchId = processorContext.batchId;

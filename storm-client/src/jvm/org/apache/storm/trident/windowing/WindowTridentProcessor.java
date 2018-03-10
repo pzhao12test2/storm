@@ -148,11 +148,6 @@ public class WindowTridentProcessor implements TridentProcessor {
     }
 
     @Override
-    public void flush() {
-        // NO-OP
-    }
-
-    @Override
     public void finishBatch(ProcessorContext processorContext) {
 
         Object batchId = processorContext.batchId;

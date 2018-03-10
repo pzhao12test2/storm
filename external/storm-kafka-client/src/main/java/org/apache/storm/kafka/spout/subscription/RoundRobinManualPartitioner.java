@@ -18,6 +18,7 @@
 
 package org.apache.storm.kafka.spout.subscription;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -37,13 +38,13 @@ import org.apache.storm.task.TopologyContext;
 public class RoundRobinManualPartitioner implements ManualPartitioner {
 
     @Override
-    public Set<TopicPartition> getPartitionsForThisTask(List<TopicPartition> allPartitionsSorted, TopologyContext context) {
+    public List<TopicPartition> partition(List<TopicPartition> allPartitions, TopologyContext context) {
         int thisTaskIndex = context.getThisTaskIndex();
         int totalTaskCount = context.getComponentTasks(context.getThisComponentId()).size();
-        Set<TopicPartition> myPartitions = new HashSet<>(allPartitionsSorted.size() / totalTaskCount + 1);
-        for (int i = thisTaskIndex; i < allPartitionsSorted.size(); i += totalTaskCount) {
-            myPartitions.add(allPartitionsSorted.get(i));
+        Set<TopicPartition> myPartitions = new HashSet<>(allPartitions.size() / totalTaskCount + 1);
+        for (int i = thisTaskIndex; i < allPartitions.size(); i += totalTaskCount) {
+            myPartitions.add(allPartitions.get(i));
         }
-        return myPartitions;
+        return new ArrayList<>(myPartitions);
     }
 }

@@ -24,7 +24,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.storm.Config;
 import org.apache.storm.messaging.IConnection;
@@ -35,6 +34,7 @@ public class Context implements IContext {
     private Map<String, Object> topoConf;
     private Map<String, IConnection> connections;
     private NioClientSocketChannelFactory clientChannelFactory;
+    
     private HashedWheelTimer clientScheduleService;
 
     /**
@@ -72,13 +72,13 @@ public class Context implements IContext {
     /**
      * establish a connection to a remote server
      */
-    public synchronized IConnection connect(String storm_id, String host, int port, AtomicBoolean[] remoteBpStatus) {
+    public synchronized IConnection connect(String storm_id, String host, int port) {
         IConnection connection = connections.get(key(host,port));
         if(connection !=null)
         {
             return connection;
         }
-        IConnection client =  new Client(topoConf,remoteBpStatus, clientChannelFactory,
+        IConnection client =  new Client(topoConf, clientChannelFactory, 
                 clientScheduleService, host, port, this);
         connections.put(key(host, client.getPort()), client);
         return client;

@@ -34,6 +34,7 @@ import org.junit.Before;
 import org.junit.Rule;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
+import org.mockito.MockitoAnnotations;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -46,15 +47,7 @@ import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 
-import org.apache.storm.kafka.spout.subscription.TopicAssigner;
-import org.mockito.junit.MockitoJUnit;
-import org.mockito.junit.MockitoRule;
-
 public abstract class KafkaSpoutAbstractTest {
-    
-    @Rule
-    public MockitoRule mockito = MockitoJUnit.rule();
-    
     @Rule
     public KafkaUnitRule kafkaUnitRule = new KafkaUnitRule();
 
@@ -81,11 +74,13 @@ public abstract class KafkaSpoutAbstractTest {
 
     @Before
     public void setUp() {
+        MockitoAnnotations.initMocks(this);
+
         spoutConfig = createSpoutConfig();
 
         consumerSpy = createConsumerSpy();
 
-        spout = new KafkaSpout<>(spoutConfig, createConsumerFactory(), new TopicAssigner());
+        spout = new KafkaSpout<>(spoutConfig, createConsumerFactory());
 
         simulatedTime = new Time.SimulatedTime();
     }

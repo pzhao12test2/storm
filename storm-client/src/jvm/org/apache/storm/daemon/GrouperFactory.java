@@ -1,4 +1,4 @@
-/**
+/*
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -137,7 +137,7 @@ public class GrouperFactory {
     public static class FieldsGrouper implements CustomStreamGrouping {
 
         private Fields outFields;
-        private List<List<Integer> > targetTasks;
+        private List<Integer> targetTasks;
         private Fields groupFields;
         private int numTasks;
 
@@ -149,17 +149,14 @@ public class GrouperFactory {
 
         @Override
         public void prepare(WorkerTopologyContext context, GlobalStreamId stream, List<Integer> targetTasks) {
-            this.targetTasks = new ArrayList<List<Integer>>();
-            for (Integer targetTask : targetTasks) {
-                this.targetTasks.add(Collections.singletonList(targetTask));
-            }
+            this.targetTasks = targetTasks;
             this.numTasks = targetTasks.size();
         }
 
         @Override
         public List<Integer> chooseTasks(int taskId, List<Object> values) {
             int targetTaskIndex = TupleUtils.chooseTaskIndex(outFields.select(groupFields, values), numTasks);
-            return targetTasks.get(targetTaskIndex);
+            return Collections.singletonList(targetTasks.get(targetTaskIndex));
         }
 
     }

@@ -24,11 +24,11 @@ import java.net.UnknownHostException;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicReference;
+
 import org.apache.commons.io.FileUtils;
 import org.apache.storm.DaemonConfig;
 import org.apache.storm.StormTimer;
@@ -47,12 +47,13 @@ import org.apache.storm.messaging.IContext;
 import org.apache.storm.metric.StormMetricsRegistry;
 import org.apache.storm.scheduler.ISupervisor;
 import org.apache.storm.utils.ConfigUtils;
-import org.apache.storm.utils.LocalState;
-import org.apache.storm.utils.ObjectReader;
 import org.apache.storm.utils.ServerConfigUtils;
-import org.apache.storm.utils.Time;
 import org.apache.storm.utils.Utils;
+import org.apache.storm.utils.ObjectReader;
+import org.apache.storm.utils.LocalState;
+import org.apache.storm.utils.Time;
 import org.apache.storm.utils.VersionInfo;
+import org.apache.zookeeper.data.ACL;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -73,10 +74,6 @@ public class Supervisor implements DaemonCommon, AutoCloseable {
     private final AtomicReference<Map<Long, LocalAssignment>> currAssignment;
     private final StormTimer heartbeatTimer;
     private final StormTimer eventTimer;
-    //Right now this is only used for sending metrics to nimbus,
-    // but we may want to combine it with the heartbeatTimer at some point
-    // to really make this work well.
-    private final ExecutorService heartbeatExecutor;
     private final AsyncLocalizer asyncLocalizer;
     private EventManager eventManager;
     private ReadClusterState readState;
@@ -92,12 +89,16 @@ public class Supervisor implements DaemonCommon, AutoCloseable {
         this.upTime = Utils.makeUptimeComputer();
         this.stormVersion = VersionInfo.getVersion();
         this.sharedContext = sharedContext;
-        this.heartbeatExecutor = Executors.newFixedThreadPool(1);
         
         iSupervisor.prepare(conf, ServerConfigUtils.supervisorIsupervisorDir(conf));
+        
+        List<ACL> acls = null;
+        if (Utils.isZkAuthenticationConfiguredStormServer(conf)) {
+            acls = SupervisorUtils.supervisorZkAcls();
+        }
 
         try {
-            this.stormClusterState = ClusterUtils.mkStormClusterState(conf, new ClusterStateContext(DaemonType.SUPERVISOR, conf));
+            this.stormClusterState = ClusterUtils.mkStormClusterState(conf, acls, new ClusterStateContext(DaemonType.SUPERVISOR));
         } catch (Exception e) {
             LOG.error("supervisor can't create stormClusterState");
             throw Utils.wrapInRuntime(e);
@@ -124,14 +125,7 @@ public class Supervisor implements DaemonCommon, AutoCloseable {
 
         this.eventTimer = new StormTimer(null, new DefaultUncaughtExceptionHandler());
     }
-
-    /**
-     * Get the executor service that is supposed to be used for heart-beats.
-     */
-    public ExecutorService getHeartbeatExecutor() {
-        return heartbeatExecutor;
-    }
-
+    
     public String getId() {
         return supervisorId;
     }
@@ -185,7 +179,7 @@ public class Supervisor implements DaemonCommon, AutoCloseable {
     }
     
     /**
-     * Launch the supervisor.
+     * Launch the supervisor
      */
     public void launch() throws Exception {
         LOG.info("Starting Supervisor with conf {}", conf);
@@ -209,13 +203,13 @@ public class Supervisor implements DaemonCommon, AutoCloseable {
             eventTimer.scheduleRecurring(0, 10, new EventManagerPushCallback(readState, eventManager));
 
             // supervisor health check
-            eventTimer.scheduleRecurring(30, 30, new SupervisorHealthCheck(this));
+            eventTimer.scheduleRecurring(300, 300, new SupervisorHealthCheck(this));
         }
         LOG.info("Starting supervisor with id {} at host {}.", getId(), getHostName());
     }
 
     /**
-     * start distribute supervisor.
+     * start distribute supervisor
      */
     public void launchDaemon() {
         LOG.info("Starting supervisor for storm version '{}'.", VersionInfo.getVersion());
@@ -225,7 +219,7 @@ public class Supervisor implements DaemonCommon, AutoCloseable {
                 throw new IllegalArgumentException("Cannot start server in local mode!");
             }
             launch();
-            Utils.addShutdownHookWithForceKillIn1Sec(this::close);
+            Utils.addShutdownHookWithForceKillIn1Sec(() -> {this.close();});
             registerWorkerNumGauge("supervisor:num-slots-used-gauge", conf);
             StormMetricsRegistry.startMetricsReporters(conf);
         } catch (Exception e) {
@@ -287,7 +281,7 @@ public class Supervisor implements DaemonCommon, AutoCloseable {
             try {
                 k.forceKill();
                 long start = Time.currentTimeMillis();
-                while (!k.areAllProcessesDead()) {
+                while(!k.areAllProcessesDead()) {
                     if ((Time.currentTimeMillis() - start) > 10_000) {
                         throw new RuntimeException("Giving up on killing " + k 
                                 + " after " + (Time.currentTimeMillis() - start) + " ms");

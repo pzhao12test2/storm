@@ -19,12 +19,11 @@
 package org.apache.storm.executor;
 
 import org.apache.storm.daemon.worker.WorkerState;
-import org.apache.storm.tuple.AddressedTuple;
+import org.apache.storm.tuple.Tuple;
 import org.apache.storm.utils.RegisteredGlobalState;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Queue;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class LocalExecutor {
@@ -34,13 +33,14 @@ public class LocalExecutor {
     public static Executor mkExecutor(WorkerState workerState, List<Long> executorId, Map<String, String> initialCredentials)
         throws Exception {
         Executor executor = Executor.mkExecutor(workerState, executorId, initialCredentials);
-        executor.setLocalExecutorTransfer(new ExecutorTransfer(workerState, executor.getTopoConf()) {
+        executor.setLocalExecutorTransfer(new ExecutorTransfer(workerState, executor.getTransferWorkerQueue(),
+            executor.getStormConf()) {
             @Override
-            public boolean tryTransfer(AddressedTuple tuple, Queue<AddressedTuple> pendingEmits) {
+            public void transfer(int task, Tuple tuple) {
                 if (null != trackId) {
                     ((AtomicInteger) ((Map) RegisteredGlobalState.getState(trackId)).get("transferred")).incrementAndGet();
                 }
-                return super.tryTransfer(tuple, pendingEmits);
+                super.transfer(task, tuple);
             }
         });
         return executor;

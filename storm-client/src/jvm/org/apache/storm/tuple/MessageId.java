@@ -20,7 +20,6 @@ package org.apache.storm.tuple;
 import com.esotericsoftware.kryo.io.Input;
 import com.esotericsoftware.kryo.io.Output;
 import java.io.IOException;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -28,16 +27,14 @@ import java.util.Random;
 import java.util.Set;
 
 public class MessageId {
-    final static MessageId unanchoredMsgId =  makeId(Collections.emptyMap());
-
     private Map<Long, Long> _anchorsToIds;
-
+    
     public static long generateId(Random rand) {
         return rand.nextLong();
     }
 
     public static MessageId makeUnanchored() {
-        return unanchoredMsgId;
+        return makeId(new HashMap<Long, Long>());
     }
         
     public static MessageId makeId(Map<Long, Long> anchorsToIds) {

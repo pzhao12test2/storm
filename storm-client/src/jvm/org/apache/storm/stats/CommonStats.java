@@ -17,23 +17,29 @@
  */
 package org.apache.storm.stats;
 
+import java.util.HashMap;
 import java.util.Map;
 import org.apache.storm.generated.ExecutorStats;
+import org.apache.storm.metric.api.IMetric;
 import org.apache.storm.metric.internal.MultiCountStatAndMetric;
 import org.apache.storm.metric.internal.MultiLatencyStatAndMetric;
 
 @SuppressWarnings("unchecked")
 public abstract class CommonStats {
 
-    private final MultiCountStatAndMetric emittedStats;
-    private final MultiCountStatAndMetric transferredStats;
+    public static final String RATE = "rate";
+
+    public static final String EMITTED = "emitted";
+    public static final String TRANSFERRED = "transferred";
+    public static final String[] COMMON_FIELDS = {EMITTED, TRANSFERRED};
 
     protected final int rate;
+    protected final Map<String, IMetric> metricMap = new HashMap<>();
 
     public CommonStats(int rate,int numStatBuckets) {
         this.rate = rate;
-        this.emittedStats = new MultiCountStatAndMetric(numStatBuckets);
-        this.transferredStats = new MultiCountStatAndMetric(numStatBuckets);
+        this.put(EMITTED, new MultiCountStatAndMetric(numStatBuckets));
+        this.put(TRANSFERRED, new MultiCountStatAndMetric(numStatBuckets));
     }
 
     public int getRate() {
@@ -41,11 +47,19 @@ public abstract class CommonStats {
     }
 
     public MultiCountStatAndMetric getEmitted() {
-        return emittedStats;
+        return (MultiCountStatAndMetric) get(EMITTED);
     }
 
     public MultiCountStatAndMetric getTransferred() {
-        return transferredStats;
+        return (MultiCountStatAndMetric) get(TRANSFERRED);
+    }
+
+    public IMetric get(String field) {
+        return (IMetric) StatsUtil.getByKey(metricMap, field);
+    }
+
+    protected void put(String field, Object value) {
+        StatsUtil.putKV(metricMap, field, value);
     }
 
     public void emittedTuple(String stream) {
@@ -57,16 +71,42 @@ public abstract class CommonStats {
     }
 
     public void cleanupStats() {
-        emittedStats.close();
-        transferredStats.close();
+        for (Object imetric : this.metricMap.values()) {
+            cleanupStat((IMetric) imetric);
+        }
     }
 
-    protected Map valueStat(MultiCountStatAndMetric metric) {
-        return metric.getTimeCounts();
+    private void cleanupStat(IMetric metric) {
+        if (metric instanceof MultiCountStatAndMetric) {
+            ((MultiCountStatAndMetric) metric).close();
+        } else if (metric instanceof MultiLatencyStatAndMetric) {
+            ((MultiLatencyStatAndMetric) metric).close();
+        }
     }
 
-    protected Map valueStat(MultiLatencyStatAndMetric metric) {
-        return metric.getTimeLatAvg();
+    protected Map valueStats(String[] fields) {
+        Map ret = new HashMap();
+        for (String field : fields) {
+            IMetric metric = this.get(field);
+            if (metric instanceof MultiCountStatAndMetric) {
+                StatsUtil.putKV(ret, field, ((MultiCountStatAndMetric) metric).getTimeCounts());
+            } else if (metric instanceof MultiLatencyStatAndMetric) {
+                StatsUtil.putKV(ret, field, ((MultiLatencyStatAndMetric) metric).getTimeLatAvg());
+            }
+        }
+        StatsUtil.putKV(ret, CommonStats.RATE, this.getRate());
+
+        return ret;
+    }
+
+    protected Map valueStat(String field) {
+        IMetric metric = this.get(field);
+        if (metric instanceof MultiCountStatAndMetric) {
+            return ((MultiCountStatAndMetric) metric).getTimeCounts();
+        } else if (metric instanceof MultiLatencyStatAndMetric) {
+            return ((MultiLatencyStatAndMetric) metric).getTimeLatAvg();
+        }
+        return null;
     }
 
     public abstract ExecutorStats renderStats();

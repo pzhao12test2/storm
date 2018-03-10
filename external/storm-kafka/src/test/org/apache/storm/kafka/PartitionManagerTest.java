@@ -238,10 +238,6 @@ public class PartitionManagerTest {
         public long getPendingCount() {
             throw new UnsupportedOperationException();
         }
-
-        @Override
-        public void flush() {
-        }
     }
 
 }

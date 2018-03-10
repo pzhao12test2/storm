@@ -19,7 +19,6 @@
 package org.apache.storm.scheduler.blacklist;
 
 import com.google.common.collect.EvictingQueue;
-import com.google.common.collect.Sets;
 
 import java.util.ArrayList;
 import java.util.HashMap;

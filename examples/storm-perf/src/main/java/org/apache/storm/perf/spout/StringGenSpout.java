@@ -18,10 +18,6 @@
 
 package org.apache.storm.perf.spout;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
 
 import org.apache.commons.lang.RandomStringUtils;
 import org.apache.storm.spout.SpoutOutputCollector;
@@ -29,6 +25,11 @@ import org.apache.storm.task.TopologyContext;
 import org.apache.storm.topology.OutputFieldsDeclarer;
 import org.apache.storm.topology.base.BaseRichSpout;
 import org.apache.storm.tuple.Fields;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 
 /** Spout pre-computes a list with 30k fixed length random strings.
  *  Emits sequentially from this list, over and over again.
@@ -42,8 +43,8 @@ public class StringGenSpout extends BaseRichSpout {
     private String fieldName = DEFAULT_FIELD_NAME;
     private SpoutOutputCollector collector = null;
     ArrayList<String> records;
-    private int curr = 0;
-    private int count = 0;
+    private int curr=0;
+    private int count=0;
 
     public StringGenSpout(int strLen) {
         this.strLen = strLen;
@@ -56,7 +57,7 @@ public class StringGenSpout extends BaseRichSpout {
 
     @Override
     public void declareOutputFields(OutputFieldsDeclarer declarer) {
-        declarer.declare(new Fields(fieldName));
+        declarer.declare( new Fields(fieldName) );
     }
 
     @Override
@@ -77,7 +78,7 @@ public class StringGenSpout extends BaseRichSpout {
     @Override
     public void nextTuple() {
         List<Object> tuple;
-        if(curr < strCount) {
+        if( curr < strCount ) {
             tuple = Collections.singletonList((Object) records.get(curr));
             ++curr;
             collector.emit(tuple, ++count);

@@ -15,23 +15,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.apache.storm.security.auth.plain;
 
-import org.apache.storm.security.auth.sasl.SimpleSaslClientCallbackHandler;
+import org.apache.storm.security.auth.AbstractSaslClientCallbackHandler;
 
-/**
- * This should only ever be used for testing.  It provides no security at all.
- * DO NOT USE THIS.  The user name is the current user and the password is
- * "password".
- */
-@Deprecated
-public class PlainClientCallbackHandler extends SimpleSaslClientCallbackHandler {
+public class PlainClientCallbackHandler extends AbstractSaslClientCallbackHandler {
 
-    /**
+    /*
      * For plain, using constants for a pair of user name and password.
      */
     public PlainClientCallbackHandler() {
-        super(System.getProperty("user.name"), "password");
+        _username = System.getProperty("user.name");
+        _password = PASSWORD;
     }
 }

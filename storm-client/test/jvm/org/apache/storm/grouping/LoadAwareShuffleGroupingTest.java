@@ -65,8 +65,8 @@ public class LoadAwareShuffleGroupingTest {
     private WorkerTopologyContext mockContext(List<Integer> availableTaskIds) {
         Map<String, Object> conf = new HashMap<>();
         conf.put(Config.STORM_NETWORK_TOPOGRAPHY_PLUGIN, "org.apache.storm.networktopography.DefaultRackDNSToSwitchMapping");
-        conf.put(Config.TOPOLOGY_LOCALITYAWARE_HIGHER_BOUND, 0.8);
-        conf.put(Config.TOPOLOGY_LOCALITYAWARE_LOWER_BOUND, 0.2);
+        conf.put(Config.TOPOLOGY_LOCALITYAWARE_HIGHER_BOUND_PERCENT, 0.8);
+        conf.put(Config.TOPOLOGY_LOCALITYAWARE_LOWER_BOUND_PERCENT, 0.2);
 
         WorkerTopologyContext context = mock(WorkerTopologyContext.class);
         when(context.getConf()).thenReturn(conf);
@@ -101,10 +101,10 @@ public class LoadAwareShuffleGroupingTest {
             double expectedOnePercentage = expectedOneWeight / (expectedOneWeight + expectedTwoWeight);
             double expectedTwoPercentage = expectedTwoWeight / (expectedOneWeight + expectedTwoWeight);
             assertEquals("i = " + i,
-                expectedOnePercentage, countByType.getOrDefault(1, 0.0) / grouping.getCapacity(),
+                expectedOnePercentage, countByType.getOrDefault(1, 0.0) / LoadAwareShuffleGrouping.CAPACITY,
                 0.01);
             assertEquals("i = " + i,
-                expectedTwoPercentage, countByType.getOrDefault(2, 0.0) / grouping.getCapacity(),
+                expectedTwoPercentage, countByType.getOrDefault(2, 0.0) / LoadAwareShuffleGrouping.CAPACITY,
                 0.01);
         }
 
@@ -121,9 +121,9 @@ public class LoadAwareShuffleGroupingTest {
             LOG.info("contByType = {}", countByType);
             double expectedOnePercentage = expectedOneWeight / (expectedOneWeight + expectedTwoWeight);
             double expectedTwoPercentage = expectedTwoWeight / (expectedOneWeight + expectedTwoWeight);
-            assertEquals(expectedOnePercentage, countByType.getOrDefault(1, 0.0) / grouping.getCapacity(),
+            assertEquals(expectedOnePercentage, countByType.getOrDefault(1, 0.0) / LoadAwareShuffleGrouping.CAPACITY,
                 0.01);
-            assertEquals(expectedTwoPercentage, countByType.getOrDefault(2, 0.0) / grouping.getCapacity(),
+            assertEquals(expectedTwoPercentage, countByType.getOrDefault(2, 0.0) / LoadAwareShuffleGrouping.CAPACITY,
                 0.01);
         }
     }
@@ -138,16 +138,9 @@ public class LoadAwareShuffleGroupingTest {
     }
 
     @Test
-    public void testLoadAwareShuffleGroupingWithEvenLoadWithManyTargets() {
-        testLoadAwareShuffleGroupingWithEvenLoad(1000);
-    }
-
-    @Test
-    public void testLoadAwareShuffleGroupingWithEvenLoadWithLessTargets() {
-        testLoadAwareShuffleGroupingWithEvenLoad(7);
-    }
-
-    private void testLoadAwareShuffleGroupingWithEvenLoad(int numTasks) {
+    public void testLoadAwareShuffleGroupingWithEvenLoad() {
+        // just pick arbitrary number
+        final int numTasks = 7;
         final LoadAwareShuffleGrouping grouper = new LoadAwareShuffleGrouping();
 
         // Define our taskIds and loads
@@ -173,16 +166,8 @@ public class LoadAwareShuffleGroupingTest {
     }
 
     @Test
-    public void testLoadAwareShuffleGroupingWithEvenLoadMultiThreadedWithManyTargets() throws ExecutionException, InterruptedException {
-        testLoadAwareShuffleGroupingWithEvenLoadMultiThreaded(1000);
-    }
-
-    @Test
-    public void testLoadAwareShuffleGroupingWithEvenLoadMultiThreadedWithLessTargets() throws ExecutionException, InterruptedException {
-        testLoadAwareShuffleGroupingWithEvenLoadMultiThreaded(7);
-    }
-
-    private void testLoadAwareShuffleGroupingWithEvenLoadMultiThreaded(int numTasks) throws InterruptedException, ExecutionException {
+    public void testLoadAwareShuffleGroupingWithEvenLoadMultiThreaded() throws InterruptedException, ExecutionException {
+        final int numTasks = 7;
 
         final LoadAwareShuffleGrouping grouper = new LoadAwareShuffleGrouping();
 

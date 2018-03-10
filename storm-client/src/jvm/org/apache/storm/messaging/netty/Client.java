@@ -17,19 +17,25 @@
  */
 package org.apache.storm.messaging.netty;
 
+import java.net.InetSocketAddress;
+import java.net.SocketAddress;
+import java.util.Iterator;
+import java.util.Collection;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.Timer;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import java.lang.InterruptedException;
+
 import org.apache.storm.Config;
 import org.apache.storm.grouping.Load;
 import org.apache.storm.messaging.ConnectionWithStatus;
-import org.apache.storm.messaging.IConnectionCallback;
 import org.apache.storm.messaging.TaskMessage;
+import org.apache.storm.messaging.IConnectionCallback;
 import org.apache.storm.metric.api.IStatefulObject;
-import org.apache.storm.policy.IWaitStrategy;
-import org.apache.storm.policy.IWaitStrategy.WAIT_SITUATION;
-import org.apache.storm.policy.WaitStrategyProgressive;
-import org.apache.storm.serialization.KryoValuesDeserializer;
-import org.apache.storm.serialization.KryoValuesSerializer;
 import org.apache.storm.utils.ObjectReader;
-import org.apache.storm.utils.ReflectionUtils;
 import org.apache.storm.utils.StormBoundedExponentialBackoffRetry;
 import org.jboss.netty.bootstrap.ClientBootstrap;
 import org.jboss.netty.channel.Channel;
@@ -42,22 +48,11 @@ import org.jboss.netty.util.TimerTask;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
-import java.net.InetSocketAddress;
-import java.net.SocketAddress;
+
 import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
-import java.util.Timer;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Supplier;
 
 import static com.google.common.base.Preconditions.checkState;
 
@@ -81,9 +76,6 @@ public class Client extends ConnectionWithStatus implements IStatefulObject, ISa
     private static final String PREFIX = "Netty-Client-";
     private static final long NO_DELAY_MS = 0L;
     private static final Timer timer = new Timer("Netty-ChannelAlive-Timer", true);
-
-    KryoValuesSerializer ser;
-    KryoValuesDeserializer deser;
 
     private final Map<String, Object> topoConf;
     private final StormBoundedExponentialBackoffRetry retryPolicy;
@@ -148,22 +140,18 @@ public class Client extends ConnectionWithStatus implements IStatefulObject, ISa
 
     private final MessageBuffer batcher;
 
-    // wait strategy when the netty channel is not writable
-    private final IWaitStrategy waitStrategy;
+    private final Object writeLock = new Object();
 
     @SuppressWarnings("rawtypes")
-    Client(Map<String, Object> topoConf, AtomicBoolean[] remoteBpStatus, ChannelFactory factory, HashedWheelTimer scheduler, String host, int port, Context context) {
+    Client(Map<String, Object> topoConf, ChannelFactory factory, HashedWheelTimer scheduler, String host, int port, Context context) {
         this.topoConf = topoConf;
         closing = false;
         this.scheduler = scheduler;
         this.context = context;
         int bufferSize = ObjectReader.getInt(topoConf.get(Config.STORM_MESSAGING_NETTY_BUFFER_SIZE));
-        int lowWatermark = ObjectReader.getInt(topoConf.get(Config.STORM_MESSAGING_NETTY_BUFFER_LOW_WATERMARK));
-        int highWatermark = ObjectReader.getInt(topoConf.get(Config.STORM_MESSAGING_NETTY_BUFFER_HIGH_WATERMARK));
         // if SASL authentication is disabled, saslChannelReady is initialized as true; otherwise false
         saslChannelReady.set(!ObjectReader.getBoolean(topoConf.get(Config.STORM_MESSAGING_NETTY_AUTHENTICATION), false));
-        LOG.info("Creating Netty Client, connecting to {}:{}, bufferSize: {}, lowWatermark: {}, highWatermark: {}",
-            host, port, bufferSize, lowWatermark, highWatermark);
+        LOG.info("creating Netty Client, connecting to {}:{}, bufferSize: {}", host, port, bufferSize);
         int messageBatchSize = ObjectReader.getInt(topoConf.get(Config.STORM_NETTY_MESSAGE_BATCH_SIZE), 262144);
 
         int maxReconnectionAttempts = ObjectReader.getInt(topoConf.get(Config.STORM_MESSAGING_NETTY_MAX_RETRIES));
@@ -172,22 +160,13 @@ public class Client extends ConnectionWithStatus implements IStatefulObject, ISa
         retryPolicy = new StormBoundedExponentialBackoffRetry(minWaitMs, maxWaitMs, maxReconnectionAttempts);
 
         // Initiate connection to remote destination
-        bootstrap = createClientBootstrap(factory, bufferSize, lowWatermark, highWatermark, topoConf, remoteBpStatus);
+        bootstrap = createClientBootstrap(factory, bufferSize, topoConf);
         dstHost = host;
         dstAddress = new InetSocketAddress(host, port);
         dstAddressPrefixedName = prefixedName(dstAddress);
         launchChannelAliveThread();
         scheduleConnect(NO_DELAY_MS);
         batcher = new MessageBuffer(messageBatchSize);
-        String clazz = (String) topoConf.get(Config.TOPOLOGY_BACKPRESSURE_WAIT_STRATEGY);
-        if (clazz == null) {
-            waitStrategy = new WaitStrategyProgressive();
-        } else {
-            waitStrategy = ReflectionUtils.newInstance(clazz);
-        }
-        waitStrategy.prepare(topoConf, WAIT_SITUATION.BACK_PRESSURE_WAIT);
-        ser = new KryoValuesSerializer(topoConf);
-        deser = new KryoValuesDeserializer(topoConf);
     }
 
     /**
@@ -215,17 +194,12 @@ public class Client extends ConnectionWithStatus implements IStatefulObject, ISa
         }, 0, CHANNEL_ALIVE_INTERVAL_MS);
     }
 
-    private ClientBootstrap createClientBootstrap(ChannelFactory factory, int bufferSize,
-                                                  int lowWatermark, int highWatermark,
-                                                  Map<String, Object> topoConf,
-                                                  AtomicBoolean[] remoteBpStatus) {
+    private ClientBootstrap createClientBootstrap(ChannelFactory factory, int bufferSize, Map<String, Object> topoConf) {
         ClientBootstrap bootstrap = new ClientBootstrap(factory);
         bootstrap.setOption("tcpNoDelay", true);
         bootstrap.setOption("sendBufferSize", bufferSize);
         bootstrap.setOption("keepAlive", true);
-        bootstrap.setOption("writeBufferLowWaterMark", lowWatermark);
-        bootstrap.setOption("writeBufferHighWaterMark", highWatermark);
-        bootstrap.setPipelineFactory(new StormClientPipelineFactory(this, remoteBpStatus, topoConf));
+        bootstrap.setPipelineFactory(new StormClientPipelineFactory(this, topoConf));
         return bootstrap;
     }
 
@@ -288,18 +262,8 @@ public class Client extends ConnectionWithStatus implements IStatefulObject, ISa
     }
 
     @Override
-    public void registerNewConnectionResponse(Supplier<Object> cb) {
-        throw new UnsupportedOperationException("Client does not accept new connections");
-    }
-
-    @Override
     public void sendLoadMetrics(Map<Integer, Double> taskToLoad) {
         throw new RuntimeException("Client connection should not send load metrics");
-    }
-
-    @Override
-    public void sendBackPressureStatus(BackPressureStatus bpStatus) {
-        throw new RuntimeException("Client connection should not send BackPressure status");
     }
 
     @Override
@@ -317,7 +281,7 @@ public class Client extends ConnectionWithStatus implements IStatefulObject, ISa
     public void send(Iterator<TaskMessage> msgs) {
         if (closing) {
             int numMessages = iteratorSize(msgs);
-            LOG.error("Dropping {} messages because the Netty client to {} is being closed", numMessages,
+            LOG.error("discarding {} messages because the Netty client to {} is being closed", numMessages,
                     dstAddressPrefixedName);
             return;
         }
@@ -338,39 +302,31 @@ public class Client extends ConnectionWithStatus implements IStatefulObject, ISa
             dropMessages(msgs);
             return;
         }
-        try {
+
+        synchronized (writeLock) {
             while (msgs.hasNext()) {
                 TaskMessage message = msgs.next();
-                MessageBatch batch = batcher.add(message);
-                if (batch != null) {
-                    writeMessage(channel, batch);
+                MessageBatch full = batcher.add(message);
+                if(full != null){
+                    flushMessages(channel, full);
                 }
             }
-            MessageBatch batch = batcher.drain();
-            if (batch != null) {
-                writeMessage(channel, batch);
-            }
-        } catch (IOException e) {
-            LOG.warn("Exception when sending message to remote worker.", e);
-            dropMessages(msgs);
         }
-    }
 
-    private void writeMessage(Channel channel, MessageBatch batch) throws IOException {
-        try {
-            int idleCounter = 0;
-            while (!channel.isWritable()) {
-                if (idleCounter == 0) { // check avoids multiple log msgs when in a idle loop
-                    LOG.debug("Experiencing Back Pressure from Netty. Entering BackPressure Wait");
+        if(channel.isWritable()){
+            synchronized (writeLock) {
+                // Netty's internal buffer is not full and we still have message left in the buffer.
+                // We should write the unfilled MessageBatch immediately to reduce latency
+                MessageBatch batch = batcher.drain();
+                if(batch != null) {
+                    flushMessages(channel, batch);
                 }
-                if (!channel.isConnected()) {
-                    throw new IOException("Connection disconnected");
-                }
-                idleCounter = waitStrategy.idle(idleCounter);
             }
-            flushMessages(channel, batch);
-        } catch (InterruptedException e) {
-            throw new RuntimeException(e);
+        } else {
+            // Channel's buffer is full, meaning that we have time to wait other messages to arrive, and create a bigger
+            // batch. This yields better throughput.
+            // We can rely on `notifyInterestChanged` to push these messages as soon as there is spece in Netty's buffer
+            // because we know `Channel.isWritable` was false after the messages were already in the buffer.
         }
     }
 
@@ -401,7 +357,6 @@ public class Client extends ConnectionWithStatus implements IStatefulObject, ISa
         // We consume the iterator by traversing and thus "emptying" it.
         int msgCount = iteratorSize(msgs);
         messagesLost.getAndAdd(msgCount);
-        LOG.info("Dropping {} messages", msgCount);
     }
 
     private int iteratorSize(Iterator<TaskMessage> msgs) {
@@ -593,7 +548,13 @@ public class Client extends ConnectionWithStatus implements IStatefulObject, ISa
      * @param channel
      */
     public void notifyInterestChanged(Channel channel) {
-        // NOOP since we are checking channel.isWritable in writeMessage
+        if(channel.isWritable()){
+            synchronized (writeLock) {
+                // Channel is writable again, write if there are any messages pending
+                MessageBatch pending = batcher.drain();
+                flushMessages(channel, pending);
+            }
+        }
     }
 
     /**

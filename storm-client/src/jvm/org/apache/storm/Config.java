@@ -15,12 +15,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.apache.storm;
 
 import java.util.Arrays;
 import org.apache.storm.metric.IEventLogger;
-import org.apache.storm.policy.IWaitStrategy;
 import org.apache.storm.serialization.IKryoDecorator;
 import org.apache.storm.serialization.IKryoFactory;
 import org.apache.storm.validation.ConfigValidation;
@@ -75,7 +73,7 @@ public class Config extends HashMap<String, Object> {
      */
     @isPositiveNumber
     @NotNull
-    public static final String TOPOLOGY_LOCALITYAWARE_HIGHER_BOUND = "topology.localityaware.higher.bound";
+    public static final String TOPOLOGY_LOCALITYAWARE_HIGHER_BOUND_PERCENT = "topology.localityaware.higher.bound.percent";
 
     /**
      * This signifies the load congestion among target tasks in scope. Currently it's only used in LoadAwareShuffleGrouping.
@@ -84,7 +82,7 @@ public class Config extends HashMap<String, Object> {
      */
     @isPositiveNumber
     @NotNull
-    public static final String TOPOLOGY_LOCALITYAWARE_LOWER_BOUND = "topology.localityaware.lower.bound";
+    public static final String TOPOLOGY_LOCALITYAWARE_LOWER_BOUND_PERCENT = "topology.localityaware.lower.bound.percent";
 
     /**
      * Try to serialize all tuples, even for local transfers.  This should only be used
@@ -122,12 +120,51 @@ public class Config extends HashMap<String, Object> {
     public static final String TASK_CREDENTIALS_POLL_SECS = "task.credentials.poll.secs";
 
     /**
-     * Whether to enable backpressure in for a certain topology.
-     * @deprecated: In Storm 2.0. Retained for enabling transition from 1.x. Will be removed soon.
+     * How often to poll for changed topology backpressure flag from ZK
      */
-    @Deprecated
+    @isInteger
+    @isPositiveNumber
+    public static final String TASK_BACKPRESSURE_POLL_SECS = "task.backpressure.poll.secs";
+
+    /**
+     * Whether to enable backpressure in for a certain topology
+     */
     @isBoolean
     public static final String TOPOLOGY_BACKPRESSURE_ENABLE = "topology.backpressure.enable";
+
+    /**
+     * This signifies the tuple congestion in a disruptor queue.
+     * When the used ratio of a disruptor queue is higher than the high watermark,
+     * the backpressure scheme, if enabled, should slow down the tuple sending speed of
+     * the spouts until reaching the low watermark.
+     */
+    @isPositiveNumber
+    public static final String BACKPRESSURE_DISRUPTOR_HIGH_WATERMARK="backpressure.disruptor.high.watermark";
+
+    /**
+     * This signifies a state that a disruptor queue has left the congestion.
+     * If the used ratio of a disruptor queue is lower than the low watermark,
+     * it will unset the backpressure flag.
+     */
+    @isPositiveNumber
+    public static final String BACKPRESSURE_DISRUPTOR_LOW_WATERMARK="backpressure.disruptor.low.watermark";
+
+    /**
+     * How long until the backpressure znode is invalid.
+     * It's measured by the data (timestamp) of the znode, not the ctime (creation time) or mtime (modification time), etc.
+     * This must be larger than BACKPRESSURE_ZNODE_UPDATE_FREQ_SECS.
+     */
+    @isInteger
+    @isPositiveNumber
+    public static final String BACKPRESSURE_ZNODE_TIMEOUT_SECS = "backpressure.znode.timeout.secs";
+
+    /**
+     * How often will the data (timestamp) of backpressure znode be updated.
+     * But if the worker backpressure status (on/off) changes, the znode will be updated anyway.
+     */
+    @isInteger
+    @isPositiveNumber
+    public static final String BACKPRESSURE_ZNODE_UPDATE_FREQ_SECS = "backpressure.znode.update.freq.secs";
 
     /**
      * A list of users that are allowed to interact with the topology.  To use this set
@@ -175,14 +212,6 @@ public class Config extends HashMap<String, Object> {
      */
     @isString
     public static final String TOPOLOGY_VERSION = "topology.version";
-
-    /**
-     * The fully qualified name of a {@link ShellLogHandler} to handle output
-     * from non-JVM processes e.g. "com.mycompany.CustomShellLogHandler". If
-     * not provided, org.apache.storm.utils.DefaultLogHandler will be used.
-     */
-    @isString
-    public static final String TOPOLOGY_MULTILANG_LOG_HANDLER = "topology.multilang.log.handler";
 
     /**
      * The serializer for communication between shell components and non-JVM
@@ -509,6 +538,16 @@ public class Config extends HashMap<String, Object> {
     public static final String TOPOLOGY_MAX_SPOUT_PENDING="topology.max.spout.pending";
 
     /**
+     * A class that implements a strategy for what to do when a spout needs to wait. Waiting is
+     * triggered in one of two conditions:
+     *
+     * 1. nextTuple emits no tuples
+     * 2. The spout has hit maxSpoutPending and can't emit any more tuples
+     */
+    @isString
+    public static final String TOPOLOGY_SPOUT_WAIT_STRATEGY="topology.spout.wait.strategy";
+
+    /**
      * The amount of milliseconds the SleepEmptyEmitStrategy should sleep for.
      */
     @isInteger
@@ -581,6 +620,16 @@ public class Config extends HashMap<String, Object> {
      */
     @isMapEntryType(keyType = String.class, valueType = String.class)
     public static final String TOPOLOGY_ENVIRONMENT="topology.environment";
+
+    /*
+     * Topology-specific option to disable/enable bolt's outgoing overflow buffer.
+     * Enabling this option ensures that the bolt can always clear the incoming messages,
+     * preventing live-lock for the topology with cyclic flow.
+     * The overflow buffer can fill degrading the performance gradually,
+     * eventually running out of memory.
+     */
+    @isBoolean
+    public static final String TOPOLOGY_BOLTS_OUTGOING_OVERFLOW_BUFFER_ENABLE="topology.bolts.outgoing.overflow.buffer.enable";
 
     /*
      * Bolt-specific configuration for windowed bolts to specify the window length as a count of number of tuples
@@ -662,25 +711,23 @@ public class Config extends HashMap<String, Object> {
     public static final String TOPOLOGY_AUTO_TASK_HOOKS="topology.auto.task.hooks";
 
     /**
-     * The size of the receive queue for each executor.
+     * The size of the Disruptor receive queue for each executor. Must be a power of 2.
      */
-    @isPositiveNumber
-    @isInteger
+    @isPowerOf2
     public static final String TOPOLOGY_EXECUTOR_RECEIVE_BUFFER_SIZE="topology.executor.receive.buffer.size";
 
     /**
-     * The size of the transfer queue for each worker.
+     * The size of the Disruptor send queue for each executor. Must be a power of 2.
      */
-    @isPositiveNumber
-    @isInteger
-    public static final String TOPOLOGY_TRANSFER_BUFFER_SIZE="topology.transfer.buffer.size";
+    @isPowerOf2
+    public static final String TOPOLOGY_EXECUTOR_SEND_BUFFER_SIZE="topology.executor.send.buffer.size";
 
     /**
-     * The size of the transfer queue for each worker.
+     * The size of the Disruptor transfer queue for each worker.
      */
-    @isPositiveNumber
     @isInteger
-    public static final String TOPOLOGY_TRANSFER_BATCH_SIZE="topology.transfer.batch.size";
+    @isPowerOf2
+    public static final String TOPOLOGY_TRANSFER_BUFFER_SIZE="topology.transfer.buffer.size";
 
     /**
      * How often a tick tuple from the "__system" component and "__tick" stream should be sent
@@ -690,40 +737,13 @@ public class Config extends HashMap<String, Object> {
     public static final String TOPOLOGY_TICK_TUPLE_FREQ_SECS="topology.tick.tuple.freq.secs";
 
     /**
-     * The number of tuples to batch before sending to the destination executor.
+     * @deprecated this is no longer supported
+     * Configure the wait strategy used for internal queuing. Can be used to tradeoff latency
+     * vs. throughput
      */
-    @isInteger
-    @isPositiveNumber
-    @NotNull
-    public static final String TOPOLOGY_PRODUCER_BATCH_SIZE="topology.producer.batch.size";
-
-    /**
-     * If number of items in task's overflowQ exceeds this, new messages coming from other workers to this task will be dropped
-     * This prevents OutOfMemoryException that can occur in rare scenarios in the presence of BackPressure. This affects
-     * only inter-worker messages. Messages originating from within the same worker will not be dropped.
-     */
-    @isInteger
-    @isPositiveNumber(includeZero = true)
-    @NotNull
-    public static final String TOPOLOGY_EXECUTOR_OVERFLOW_LIMIT="topology.executor.overflow.limit";
-
-    /**
-     * How often a worker should check and notify upstream workers about its tasks that are no longer experiencing BP
-     * and able to receive new messages
-     */
-    @isInteger
-    @isPositiveNumber
-    @NotNull
-    public static final String TOPOLOGY_BACKPRESSURE_CHECK_MILLIS ="topology.backpressure.check.millis";
-
-    /**
-     * How often to send flush tuple to the executors for flushing out batched events.
-     */
-    @isInteger
-    @isPositiveNumber(includeZero = true)
-    @NotNull
-    public static final String TOPOLOGY_BATCH_FLUSH_INTERVAL_MILLIS ="topology.batch.flush.interval.millis";
-
+    @Deprecated
+    @isString
+    public static final String TOPOLOGY_DISRUPTOR_WAIT_STRATEGY="topology.disruptor.wait.strategy";
 
     /**
      * The size of the shared thread pool for worker tasks to make use of. The thread pool can be accessed
@@ -862,135 +882,30 @@ public class Config extends HashMap<String, Object> {
     public static final String TOPOLOGY_ISOLATED_MACHINES = "topology.isolate.machines";
 
     /**
-     * A class that implements a wait strategy for spout. Waiting is triggered in one of two conditions:
-     *
-     * 1. nextTuple emits no tuples
-     * 2. The spout has hit maxSpoutPending and can't emit any more tuples
-     *
-     * This class must implement {@link IWaitStrategy}.
-     */
-    @isString
-    public static final String TOPOLOGY_SPOUT_WAIT_STRATEGY = "topology.spout.wait.strategy";
-
-    /**
-     * Configures park time for WaitStrategyPark for spout.  If set to 0, returns immediately (i.e busy wait).
-     */
-    @NotNull
-    @isPositiveNumber(includeZero = true)
-    public static final String TOPOLOGY_SPOUT_WAIT_PARK_MICROSEC = "topology.spout.wait.park.microsec";
-
-    /**
-     * Configures number of iterations to spend in level 1 of WaitStrategyProgressive, before progressing to level 2
-     */
-    @NotNull
-    @isInteger
-    @isPositiveNumber(includeZero = true)
-    public static final String TOPOLOGY_SPOUT_WAIT_PROGRESSIVE_LEVEL1_COUNT =  "topology.spout.wait.progressive.level1.count";
-
-    /**
-     * Configures number of iterations to spend in level 2 of WaitStrategyProgressive, before progressing to level 3
-     */
-    @NotNull
-    @isInteger
-    @isPositiveNumber(includeZero = true)
-    public static final String TOPOLOGY_SPOUT_WAIT_PROGRESSIVE_LEVEL2_COUNT =  "topology.spout.wait.progressive.level2.count";
-
-    /**
-     * Configures sleep time for WaitStrategyProgressive.
-     */
-    @NotNull
-    @isPositiveNumber(includeZero = true)
-    public static final String TOPOLOGY_SPOUT_WAIT_PROGRESSIVE_LEVEL3_SLEEP_MILLIS = "topology.spout.wait.progressive.level3.sleep.millis";
-
-    /**
-     * Selects the Bolt's Wait Strategy to use when there are no incoming msgs. Used to trade off latency vs CPU usage.
-     * This class must implement {@link IWaitStrategy}.
-     */
-    @isString
-    public static final String TOPOLOGY_BOLT_WAIT_STRATEGY = "topology.bolt.wait.strategy";
-
-    /**
-     * Configures park time for WaitStrategyPark.  If set to 0, returns immediately (i.e busy wait).
-     */
-    @NotNull
-    @isPositiveNumber(includeZero = true)
-    public static final String TOPOLOGY_BOLT_WAIT_PARK_MICROSEC = "topology.bolt.wait.park.microsec";
-
-    /**
-     * Configures number of iterations to spend in level 1 of WaitStrategyProgressive, before progressing to level 2
-     */
-    @NotNull
-    @isInteger
-    @isPositiveNumber(includeZero = true)
-    public static final String TOPOLOGY_BOLT_WAIT_PROGRESSIVE_LEVEL1_COUNT =  "topology.bolt.wait.progressive.level1.count";
-
-    /**
-     * Configures number of iterations to spend in level 2 of WaitStrategyProgressive, before progressing to level 3
-     */
-    @NotNull
-    @isInteger
-    @isPositiveNumber(includeZero = true)
-    public static final String TOPOLOGY_BOLT_WAIT_PROGRESSIVE_LEVEL2_COUNT =  "topology.bolt.wait.progressive.level2.count";
-
-    /**
-     * Configures sleep time for WaitStrategyProgressive.
-     */
-    @NotNull
-    @isPositiveNumber(includeZero = true)
-    public static final String TOPOLOGY_BOLT_WAIT_PROGRESSIVE_LEVEL3_SLEEP_MILLIS = "topology.bolt.wait.progressive.level3.sleep.millis";
-
-
-    /**
-     * A class that implements a wait strategy for an upstream component (spout/bolt) trying to write to a downstream component
-     * whose recv queue is full
-     *
-     * 1. nextTuple emits no tuples
-     * 2. The spout has hit maxSpoutPending and can't emit any more tuples
-     *
-     * This class must implement {@link IWaitStrategy}.
-     */
-    @isString
-    public static final String TOPOLOGY_BACKPRESSURE_WAIT_STRATEGY="topology.backpressure.wait.strategy";
-
-    /**
-     * Configures park time if using WaitStrategyPark for BackPressure. If set to 0, returns immediately (i.e busy wait).
-     */
-    @NotNull
-    @isPositiveNumber(includeZero = true)
-    public static final String TOPOLOGY_BACKPRESSURE_WAIT_PARK_MICROSEC = "topology.backpressure.wait.park.microsec";
-
-    /**
-     * Configures sleep time if using WaitStrategyProgressive for BackPressure.
-     */
-    @NotNull
-    @isPositiveNumber(includeZero = true)
-    public static final String TOPOLOGY_BACKPRESSURE_WAIT_PROGRESSIVE_LEVEL3_SLEEP_MILLIS = "topology.backpressure.wait.progressive.level3.sleep.millis";
-
-    /**
-     * Configures steps used to determine progression to the next level of wait .. if using WaitStrategyProgressive for BackPressure.
-     */
-    @NotNull
-    @isInteger
-    @isPositiveNumber(includeZero = true)
-    public static final String TOPOLOGY_BACKPRESSURE_WAIT_PROGRESSIVE_LEVEL1_COUNT = "topology.backpressure.wait.progressive.level1.count";
-
-    /**
-     * Configures steps used to determine progression to the next level of wait .. if using WaitStrategyProgressive for BackPressure.
-     */
-    @NotNull
-    @isInteger
-    @isPositiveNumber(includeZero = true)
-    public static final String TOPOLOGY_BACKPRESSURE_WAIT_PROGRESSIVE_LEVEL2_COUNT = "topology.backpressure.wait.progressive.level2.count";
-
-
-    /**
-     * Check recvQ after every N invocations of Spout's nextTuple() [when ACKing is disabled].
-     * Spouts receive very few msgs if ACK is disabled. This avoids checking the recvQ after each nextTuple().
+     * Configure timeout milliseconds used for disruptor queue wait strategy. Can be used to tradeoff latency
+     * vs. CPU usage
      */
     @isInteger
-    @isPositiveNumber(includeZero = true)
     @NotNull
-    public static final String TOPOLOGY_SPOUT_RECVQ_SKIPS = "topology.spout.recvq.skips";
+    public static final String TOPOLOGY_DISRUPTOR_WAIT_TIMEOUT_MILLIS="topology.disruptor.wait.timeout.millis";
+
+    /**
+     * The number of tuples to batch before sending to the next thread.  This number is just an initial suggestion and
+     * the code may adjust it as your topology runs.
+     */
+    @isInteger
+    @isPositiveNumber
+    @NotNull
+    public static final String TOPOLOGY_DISRUPTOR_BATCH_SIZE="topology.disruptor.batch.size";
+
+    /**
+     * The maximum age in milliseconds a batch can be before being sent to the next thread.  This number is just an
+     * initial suggestion and the code may adjust it as your topology runs.
+     */
+    @isInteger
+    @isPositiveNumber
+    @NotNull
+    public static final String TOPOLOGY_DISRUPTOR_BATCH_TIMEOUT_MILLIS="topology.disruptor.batch.timeout.millis";
 
     /**
      * Minimum number of nimbus hosts where the code must be replicated before leader nimbus
@@ -1008,6 +923,17 @@ public class Config extends HashMap<String, Object> {
      */
     @isNumber
     public static final String TOPOLOGY_MAX_REPLICATION_WAIT_TIME_SEC = "topology.max.replication.wait.time.sec";
+
+    /**
+     * This is a config that is not likely to be used.  Internally the disruptor queue will batch entries written
+     * into the queue.  A background thread pool will flush those batches if they get too old.  By default that
+     * pool can grow rather large, and sacrifice some CPU time to keep the latency low.  In some cases you may
+     * want the queue to be smaller so there is less CPU used, but the latency will increase in some situations.
+     * This configs is on a per cluster bases, if you want to control this on a per topology bases you need to set
+     * the java System property for the worker "num_flusher_pool_threads" to the value you want.
+     */
+    @isInteger
+    public static final String STORM_WORKER_DISRUPTOR_FLUSHER_MAX_POOL_SIZE = "storm.worker.disruptor.flusher.max.pool.size";
 
     /**
      * The list of servers that Pacemaker is running on.
@@ -1211,14 +1137,6 @@ public class Config extends HashMap<String, Object> {
      */
     @isString
     public static final String STORM_ZOOKEEPER_SUPERACL = "storm.zookeeper.superACL";
-
-    /**
-     * The ACL of the drpc user in zookeeper so the drpc servers can verify worker tokens.
-     *
-     * Should be in the form 'scheme:acl' just like STORM_ZOOKEEPER_SUPERACL.
-     */
-    @isString
-    public static final String STORM_ZOOKEEPER_DRPC_ACL = "storm.zookeeper.drpcACL";
 
     /**
      * The topology Zookeeper authentication scheme to use, e.g. "digest". It is the internal config and user shouldn't set it.
@@ -1446,28 +1364,6 @@ public class Config extends HashMap<String, Object> {
     @isInteger
     @isPositiveNumber
     public static final String STORM_MESSAGING_NETTY_BUFFER_SIZE = "storm.messaging.netty.buffer_size";
-
-    /**
-     * Netty based messaging: The netty write buffer high watermark in bytes.
-     * <p>
-     * If the number of bytes queued in the netty's write buffer exceeds this value, the netty {@code Channel.isWritable()}
-     * will start to return {@code false}. The client will wait until the value falls below the {@linkplain #STORM_MESSAGING_NETTY_BUFFER_LOW_WATERMARK low water mark}.
-     * </p>
-     */
-    @isInteger
-    @isPositiveNumber
-    public static final String STORM_MESSAGING_NETTY_BUFFER_HIGH_WATERMARK = "storm.messaging.netty.buffer.high.watermark";
-
-    /**
-     * Netty based messaging: The netty write buffer low watermark in bytes.
-     * <p>
-     * Once the number of bytes queued in the write buffer exceeded the {@linkplain #STORM_MESSAGING_NETTY_BUFFER_HIGH_WATERMARK high water mark} and then
-     * dropped down below this value, the netty {@code Channel.isWritable()} will start to return true.
-     * </p>
-     */
-    @isInteger
-    @isPositiveNumber
-    public static final String STORM_MESSAGING_NETTY_BUFFER_LOW_WATERMARK = "storm.messaging.netty.buffer.low.watermark";
 
     /**
      * Netty based messaging: Sets the backlog value to specify when the channel binds to a local address

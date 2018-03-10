@@ -18,7 +18,6 @@
 package org.apache.storm.task;
 
 import org.apache.storm.tuple.Tuple;
-
 import java.util.Collection;
 import java.util.List;
 
@@ -31,5 +30,4 @@ public interface IOutputCollector extends IErrorReporter {
     void ack(Tuple input);
     void fail(Tuple input);
     void resetTimeout(Tuple input);
-    void flush();
 }

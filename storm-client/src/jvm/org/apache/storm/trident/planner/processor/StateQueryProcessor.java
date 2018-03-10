@@ -79,11 +79,6 @@ public class StateQueryProcessor implements TridentProcessor {
     }
 
     @Override
-    public void flush() {
-        // NO-OP
-    }
-
-    @Override
     public void finishBatch(ProcessorContext processorContext) {
         BatchState state = (BatchState) processorContext.state[_context.getStateIndex()];
         if(!state.tuples.isEmpty()) {

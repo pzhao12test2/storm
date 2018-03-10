@@ -589,9 +589,9 @@ public class TestHdfsSpout {
     }
 
     private Map getCommonConfigs() {
-        Map<String, Object> topoConf = new HashMap();
-        topoConf.put(Config.TOPOLOGY_ACKER_EXECUTORS, "0");
-        return topoConf;
+        Map<String, Object> conf = new HashMap();
+        conf.put(Config.TOPOLOGY_ACKER_EXECUTORS, "0");
+        return conf;
     }
 
     private AutoCloseableHdfsSpout makeSpout(String readerType, String[] outputFields) {
@@ -619,9 +619,9 @@ public class TestHdfsSpout {
         }
     }
 
-    private void openSpout(HdfsSpout spout, int spoutId, Map<String, Object> topoConf) {
+    private void openSpout(HdfsSpout spout, int spoutId, Map<String, Object> conf) {
         MockCollector collector = new MockCollector();
-        spout.open(topoConf, new MockTopologyContext(spoutId, topoConf), collector);
+        spout.open(conf, new MockTopologyContext(spoutId), collector);
     }
 
     /**
@@ -698,15 +698,10 @@ public class TestHdfsSpout {
         }
 
         @Override
-        public List<Integer> emit(List<Object> tuple, Object messageId) {
+        public List<Integer> emit(String streamId, List<Object> tuple, Object messageId) {
             lines.add(tuple.toString());
             items.add(HdfsUtils.Pair.of(messageId, tuple));
             return null;
-        }
-
-        @Override
-        public List<Integer> emit(String streamId, List<Object> tuple, Object messageId) {
-            return emit(tuple, messageId);
         }
 
         @Override
@@ -752,9 +747,9 @@ public class TestHdfsSpout {
 
         private final int componentId;
 
-        public MockTopologyContext(int componentId, Map<String, Object> topoConf) {
+        public MockTopologyContext(int componentId) {
             // StormTopology topology, Map<String, Object> topoConf, Map<Integer, String> taskToComponent, Map<String, List<Integer>> componentToSortedTasks, Map<String, Map<String, Fields>> componentToStreamToFields, String stormId, String codeDir, String pidDir, Integer taskId, Integer workerPort, List<Integer> workerTasks, Map<String, Object> defaultResources, Map<String, Object> userResources, Map<String, Object> executorData, Map<Integer, Map<Integer, Map<String, IMetric>>> registeredMetrics, Atom openOrPrepareWasCalled
-            super(null, topoConf, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+            super(null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
             this.componentId = componentId;
         }
 

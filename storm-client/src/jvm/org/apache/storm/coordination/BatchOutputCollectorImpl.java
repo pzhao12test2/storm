@@ -39,11 +39,6 @@ public class BatchOutputCollectorImpl extends BatchOutputCollector {
     }
 
     @Override
-    public void flush() {
-        _collector.flush();
-    }
-
-    @Override
     public void reportError(Throwable error) {
         _collector.reportError(error);
     }

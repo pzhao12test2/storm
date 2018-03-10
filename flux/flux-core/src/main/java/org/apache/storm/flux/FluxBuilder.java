@@ -25,7 +25,6 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -278,10 +277,9 @@ public class FluxBuilder {
                 Object value = prop.isReference() ? context.getComponent(prop.getRef()) : prop.getValue();
                 Method setter = findSetter(clazz, prop.getName(), value);
                 if (setter != null) {
-                    Object[] methodArgs = getArgsWithListCoercion(Collections.singletonList(value), setter.getParameterTypes());
-                    LOG.debug("found setter, attempting to invoke with {}", methodArgs);
+                    LOG.debug("found setter, attempting to invoke");
                     // invoke setter
-                    setter.invoke(instance, methodArgs);
+                    setter.invoke(instance, new Object[]{value});
                 } else {
                     // look for a public instance variable
                     LOG.debug("no setter found. Looking for a public instance variable...");
@@ -301,20 +299,15 @@ public class FluxBuilder {
 
     private static Method findSetter(Class clazz, String property, Object arg) {
         String setterName = toSetterName(property);
+        Method retval = null;
         Method[] methods = clazz.getMethods();
-        LOG.debug("Target setter: {}, arg: {}", setterName, arg);
         for (Method method : methods) {
             if (setterName.equals(method.getName())) {
-                Class<?>[] parameterTypes = method.getParameterTypes();
-                LOG.debug("Found setter method: {}, parameter types: {}", method.getName(), parameterTypes);
-                boolean invokable = canInvokeWithArgs(Collections.singletonList(arg), method.getParameterTypes());
-                LOG.debug("** invokable --> {}", invokable);
-                if (invokable) {
-                    return method;
-                }
+                LOG.debug("Found setter method: " + method.getName());
+                retval = method;
             }
         }
-        return null;
+        return retval;
     }
 
     private static String toSetterName(String name) {
@@ -357,7 +350,7 @@ public class FluxBuilder {
             Constructor con = findCompatibleConstructor(constructorArgs, clazz);
             if (con != null) {
                 LOG.debug("Found something seemingly compatible, attempting invocation...");
-                obj = con.newInstance(getArgsWithListCoercion(constructorArgs, con.getParameterTypes()));
+                obj = con.newInstance(getArgsWithListCoercian(constructorArgs, con.getParameterTypes()));
             } else {
                 String msg = String.format("Couldn't find a suitable constructor for class '%s' with arguments '%s'.",
                         clazz.getName(),
@@ -375,7 +368,7 @@ public class FluxBuilder {
             }
             method = findCompatibleMethod(methodArgs, clazz, def.getFactory());
             if (method != null) {
-                obj = method.invoke(null, getArgsWithListCoercion(methodArgs, method.getParameterTypes()));
+                obj = method.invoke(null, getArgsWithListCoercian(methodArgs, method.getParameterTypes()));
             } else {
                 String msg = String.format("Couldn't find a suitable static method '%s' for class '%s' with arguments '%s'.",
                         def.getFactory(),
@@ -537,7 +530,7 @@ public class FluxBuilder {
             String methodName = methodDef.getName();
             Method method = findCompatibleMethod(args, clazz, methodName);
             if (method != null) {
-                Object[] methodArgs = getArgsWithListCoercion(args, method.getParameterTypes());
+                Object[] methodArgs = getArgsWithListCoercian(args, method.getParameterTypes());
                 method.invoke(instance, methodArgs);
             } else {
                 String msg = String.format("Unable to find configuration method '%s' in class '%s' with arguments %s.",
@@ -587,7 +580,7 @@ public class FluxBuilder {
      * list to an java.lang.Object array that can be used to invoke the constructor. If an argument needs
      * to be coerced from a List to an Array, do so.
      */
-    private static Object[] getArgsWithListCoercion(List<Object> args, Class[] parameterTypes) {
+    private static Object[] getArgsWithListCoercian(List<Object> args, Class[] parameterTypes) {
         if (parameterTypes.length != args.size()) {
             throw new IllegalArgumentException("Contructor parameter count does not egual argument size.");
         }

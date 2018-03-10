@@ -672,26 +672,6 @@ struct OwnerResourceSummary {
   18: optional double assigned_off_heap_memory;
 }
 
-struct WorkerMetricPoint {
-  1: required string metricName;
-  2: required i64 timestamp;
-  3: required double metricValue;
-  4: required string componentId;
-  5: required string executorId;
-  6: required string streamId;
-}
-
-struct WorkerMetricList {
-  1: list<WorkerMetricPoint> metrics;
-}
-
-struct WorkerMetrics {
-  1: required string topologyId;
-  2: required i32 port;
-  3: required string hostname;
-  4: required WorkerMetricList metricList;
-}
-
 service Nimbus {
   void submitTopology(1: string name, 2: string uploadedJarLocation, 3: string jsonConf, 4: StormTopology topology) throws (1: AlreadyAliveException e, 2: InvalidTopologyException ite, 3: AuthorizationException aze);
   void submitTopologyWithOpts(1: string name, 2: string uploadedJarLocation, 3: string jsonConf, 4: StormTopology topology, 5: SubmitOptions options) throws (1: AlreadyAliveException e, 2: InvalidTopologyException ite, 3: AuthorizationException aze);
@@ -768,7 +748,6 @@ service Nimbus {
   StormTopology getUserTopology(1: string id) throws (1: NotAliveException e, 2: AuthorizationException aze);
   TopologyHistoryInfo getTopologyHistory(1: string user) throws (1: AuthorizationException aze);
   list<OwnerResourceSummary> getOwnerResourceSummaries (1: string owner) throws (1: AuthorizationException aze);
-  void processWorkerMetrics(1: WorkerMetrics metrics);
 }
 
 struct DRPCRequest {
@@ -856,45 +835,4 @@ exception HBAuthorizationException {
 
 exception HBExecutionException {
   1: required string msg;
-}
-
-# WorkerTokens are used as credentials that allow a Worker to authenticate with DRPC, Nimbus, or other storm processes that we add in here.
-enum WorkerTokenServiceType {
-    NIMBUS,
-    DRPC
-}
-
-#This is information that we want to be sure users do not modify in any way...
-struct WorkerTokenInfo {
-    # The user/owner of the topology.  So we can authorize based off of a user
-    1: required string userName;
-    # The topology id that this token is a part of.  So we can find the right sceret key, and so we can
-    #  authorize based off of a topology if needed.
-    2: required string topologyId;
-    # What version of the secret key to use.  If it is too old or we cannot find it, then the token will not be valid.
-    3: required i64 secretVersion;
-    # Unix time stamp in millis when this expires
-    4: required i64 expirationTimeMillis;
-}
-
-#This is what we give to worker so they can authenticate with built in daemons
-struct WorkerToken {
-    # What service is this for?
-    1: required WorkerTokenServiceType serviceType;
-    # A serialized version of a WorkerTokenInfo.  We double encode it so the bits don't change between a serialzie/deserialize cycle.
-    2: required binary info;
-    # how to prove that info is correct and unmodified when it gets back to us.
-    3: required binary signature;
-}
-
-#This is the private information that we can use to verify a WorkerToken is still valid
-# The topology id and version number are stored outside of this as the key to look it up.
-struct PrivateWorkerKey {
-    #This is the key itself.  An algorithm selection may be added in the future, but for now there is only
-    # one so don't worry about it.
-    1: required binary key;
-    # Extra sanity check that the user is correct.
-    2: required string userName;
-    # Unix time stamp in millis when this, and any corresponding tokens, expire
-    3: required i64 expirationTimeMillis;
 }
